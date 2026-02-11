@@ -1,0 +1,9 @@
+# Core dependencies
+music21>=9.0.0
+numpy>=1.20.0
+graphviz>=0.20.0
+
+# Optional: for development
+# pytest>=7.0.0
+# black>=23.0.0
+# ruff>=0.1.0

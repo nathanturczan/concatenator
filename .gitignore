@@ -1,0 +1,43 @@
+# Generated outputs
+outputs/
+
+# Cache files
+*.pkl
+analysis.pkl
+
+# Python
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Graphviz output
+Digraph.gv
+Digraph.gv.pdf
+
+# Audio files (too large for git)
+*.wav
+*.mp3
+*.aiff
+*.aif
+*.flac
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
