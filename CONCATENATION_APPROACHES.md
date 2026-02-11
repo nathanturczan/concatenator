@@ -33,17 +33,25 @@ This document tracks different approaches to musical concatenation—chaining au
 
 ### MIDI/Notation Collections
 
-| Collection | Source | Items | Format | Location | Status |
-|------------|--------|-------|--------|----------|--------|
-| **Reger Modulations** | Max Reger modulation exercises | 120 MIDI files (with a/b variants) | MIDI + LilyPond | `/Users/soney/Music/MIDI_Experiments/Modulation old/Reger-Dataset/` | Ready for analysis |
-| **Demo MIDIs** | Various (Take 5, All Night Long, etc.) | 6 | MIDI | `/Users/soney/Music/MIDI_Experiments/demo_MIDIs/` | Available |
-| **Schoenberg** | Harmonielehre examples | 198 | MIDI | `/Users/soney/Music/MIDI_Experiments/Modulation/Schoenberg-Dataset/` | Active |
-| **Hindemith** | Craft of Musical Composition | 65 | MIDI | `/Users/soney/Music/MIDI_Experiments/Modulation/Hindemith-Dataset/` | Active |
-| **Hanson** | Harmonic Materials of Modern Music | 52 | MIDI | `/Users/soney/Music/MIDI_Experiments/Modulation/Hanson-Dataset/` | Active |
-| **HAM** | Harmonic Analysis Materials | 52 | MIDI | `/Users/soney/Music/MIDI_Experiments/Modulation/HAM-Dataset/` | Active |
-| **Levarie** | Theory textbook | 39 | MIDI | `/Users/soney/Music/MIDI_Experiments/Modulation/Levarie-Dataset/` | Active |
-| **Slonimsky** | Thesaurus of Scales | 20 | MIDI | `/Users/soney/Music/MIDI_Experiments/Modulation/Slonimsky-Dataset/` | Active |
-| **Misc** | Various sources | 74 | MIDI | `/Users/soney/Music/MIDI_Experiments/Modulation/Misc-Dataset/` | Active |
+**Consolidated Location:** `/Users/soney/Github/concatenator/datasets/`
+
+| Collection | Source | Items | Format | Status |
+|------------|--------|-------|--------|--------|
+| **Schoenberg** | Harmonielehre examples | 198 | MIDI | Active |
+| **Reger** | Max Reger modulation exercises | 121 | MIDI + LilyPond | Active |
+| **Boyd-Jazz** | Jazz chord progressions | 114 | MIDI | Active |
+| **Messiaen** | Modes of limited transposition | 101 | MIDI | Active |
+| **Misc** | Various sources | 74 | MIDI | Active |
+| **Hindemith** | Craft of Musical Composition | 65 | MIDI | Active |
+| **HAM** | Harmonic Analysis Materials | 52 | MIDI | Active |
+| **Hanson** | Harmonic Materials of Modern Music | 52 | MIDI | Active |
+| **Levarie** | Theory textbook | 39 | MIDI | Active |
+| **Persichetti** | Twentieth-Century Harmony | 37 | MIDI | Active |
+| **Slonimsky** | Thesaurus of Scales | 36 | MIDI + LilyPond | Active |
+| **VocalArr** | Vocal arrangements | 11 | MIDI | Active |
+| **NAKH** | Miscellaneous | 4 | MIDI | Active |
+| **Wagner** | Wagner excerpts | 2 | MIDI | Active |
+| **Wischnegradsky** | Microtonal examples | 1 | MIDI | Active |
 
 ---
 
@@ -73,21 +81,28 @@ This document tracks different approaches to musical concatenation—chaining au
 
 ### 2. Progression Concatenator (MIDI Chaining)
 
-**Active Implementation:** `/Users/soney/Music/MIDI_Experiments/Modulation/progression5.py`
-**Documentation:** `/Users/soney/Github/harmony-tools/progression-concatenator/README.md`
-**Archived Version:** `/Users/soney/Github/archived/Modulation/progression-concatenator.py`
+**Active Implementation:** `/Users/soney/Github/concatenator/` (consolidated repo)
+**Documentation:** `/Users/soney/Github/concatenator/README.md`
+**Original Source:** `/Users/soney/Music/MIDI_Experiments/Modulation/progression5.py`
 
-**MIDI Corpus (504 progressions):**
+**MIDI Corpus (~905 progressions):**
 | Dataset | Count | Source |
 |---------|-------|--------|
 | Schoenberg | 198 | *Harmonielehre*, pp. 89-93, 360-361 |
+| Reger | 121 | Modulation treatise |
+| Boyd-Jazz | 114 | Jazz harmony |
+| Messiaen | 101 | Modes of limited transposition |
 | Misc | 74 | Various sources |
 | Hindemith | 65 | *Craft of Musical Composition* |
 | HAM | 52 | Harmonic Analysis Materials |
 | Hanson | 52 | *Harmonic Materials of Modern Music* |
 | Levarie | 39 | Theory textbook |
-| Slonimsky | 20 | *Thesaurus of Scales* |
+| Persichetti | 37 | *Twentieth-Century Harmony* |
+| Slonimsky | 36 | *Thesaurus of Scales* |
+| VocalArr | 11 | Vocal arrangements |
 | NAKH | 4 | Miscellaneous |
+| Wagner | 2 | Wagner excerpts |
+| Wischnegradsky | 1 | Microtonal examples |
 
 **Algorithm:**
 1. Parse MIDI progressions using music21
@@ -96,15 +111,15 @@ This document tracks different approaches to musical concatenation—chaining au
 4. Prune sinks iteratively (progressions with no valid children)
 5. Random walk through graph, biasing toward loop closure after target length
 6. Apply octave correction for voice leading continuity
-7. Add ties for repeated notes, export to MusicXML
+7. Add ties for repeated notes, export to LilyPond (default) or MusicXML
 
 **Usage:**
 ```bash
-cd /Users/soney/Music/MIDI_Experiments/Modulation
-python progression5.py Schoenberg-Dataset/harmonielehre-p89-91-inversions-of-7th-chords-1.midi -n 100
+cd /Users/soney/Github/concatenator
+python scripts/concatenate_midi.py datasets/schoenberg/harmonielehre-p89-91-inversions-of-7th-chords-1.midi -n 100 --no-play
 ```
 
-**Output:** MusicXML score opened in MuseScore, with optional realtime MIDI playback
+**Output:** LilyPond file (default) or MusicXML score, with optional realtime MIDI playback
 
 ---
 
