@@ -18,6 +18,7 @@ from .chain import (
     find_initial_samples,
     find_next_samples,
     generate_companion_midi,
+    generate_score_report,
 )
 
 __all__ = [
@@ -31,4 +32,5 @@ __all__ = [
     "find_initial_samples",
     "find_next_samples",
     "generate_companion_midi",
+    "generate_score_report",
 ]

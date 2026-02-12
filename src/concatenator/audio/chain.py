@@ -7,12 +7,39 @@ network, selecting samples that fit the current scale or adjacent scales.
 import json
 import os
 import random
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from pydub import AudioSegment
 
-from ..scales.tymoczko import load_scales_data, get_adjacent_scales
+from ..scales.tymoczko import (
+    load_scales_data,
+    get_adjacent_scales,
+    transpose_pitch_classes,
+    pitch_class_to_note_name,
+)
+
+
+def load_samples_manifest(project_path: Path) -> Dict:
+    """Load samples_data.json from a project directory."""
+    manifest_path = project_path / "samples_data.json"
+    if not manifest_path.exists():
+        return {}
+
+    with open(manifest_path) as f:
+        return json.load(f)
+
+
+def get_original_sample_name(sample_filename: str) -> str:
+    """Extract the original sample name (without transposition suffix).
+
+    Example: 'wildrose_1_transposed_by-3.wav' -> 'wildrose_1'
+    """
+    name = Path(sample_filename).stem
+    if "_transposed_by" in name:
+        name = name.split("_transposed_by")[0]
+    return name
 
 
 def find_initial_samples(
@@ -22,15 +49,17 @@ def find_initial_samples(
 ) -> List[Tuple[str, Path]]:
     """Find all samples matching a pattern across all scale folders.
 
-    Args:
-        scales_dir: Path to the scales_dir with organized samples
-        sample_prefix: Prefix pattern like "wildrose" or "takemitsu_perc"
-        measure_number: Measure/segment number to find
-
-    Returns:
-        List of (scale_name, sample_path) tuples
+    Handles both naming conventions:
+    - wildrose style: wildrose_1_, wildrose_2_
+    - sarabande style: satie_sarabande_0001, satie_sarabande_0002
     """
-    pattern = f"{sample_prefix}_{measure_number}_"
+    # Try both patterns
+    patterns = [
+        f"{sample_prefix}_{measure_number}_",           # wildrose_1_
+        f"{sample_prefix}_{measure_number:04d}",        # satie_sarabande_0001
+        f"{sample_prefix}_{measure_number:02d}",        # prefix_01
+    ]
+
     results = []
 
     for scale_folder in scales_dir.iterdir():
@@ -38,8 +67,10 @@ def find_initial_samples(
             continue
 
         for sample_file in scale_folder.iterdir():
-            if sample_file.name.startswith(pattern):
-                results.append((scale_folder.name, sample_file))
+            for pattern in patterns:
+                if sample_file.name.startswith(pattern):
+                    results.append((scale_folder.name, sample_file))
+                    break
 
     return results
 
@@ -53,24 +84,22 @@ def find_next_samples(
 ) -> List[Path]:
     """Find samples for the next measure from current and adjacent scales.
 
-    Args:
-        scales_dir: Path to scales_dir
-        scales_data: Loaded scales dictionary
-        current_scale: Current scale name
-        sample_prefix: Sample naming prefix
-        measure_number: Target measure number
-
-    Returns:
-        List of sample paths from compatible scales
+    Handles both naming conventions:
+    - wildrose style: wildrose_1_, wildrose_2_
+    - sarabande style: satie_sarabande_0001, satie_sarabande_0002
     """
-    pattern = f"{sample_prefix}_{measure_number}_"
+    # Try both patterns
+    patterns = [
+        f"{sample_prefix}_{measure_number}_",           # wildrose_1_
+        f"{sample_prefix}_{measure_number:04d}",        # satie_sarabande_0001
+        f"{sample_prefix}_{measure_number:02d}",        # prefix_01
+    ]
 
-    # Build list of directories to search
     adjacent = get_adjacent_scales(scales_data, current_scale)
     search_dirs = [current_scale] + adjacent
 
     samples = []
-    seen = set()  # Avoid duplicates from symlinks
+    seen = set()
 
     for scale_name in search_dirs:
         scale_dir = scales_dir / scale_name
@@ -78,32 +107,23 @@ def find_next_samples(
             continue
 
         for sample_file in scale_dir.iterdir():
-            if sample_file.name.startswith(pattern):
-                # Resolve symlinks to avoid duplicates
-                resolved = sample_file.resolve()
-                if resolved not in seen:
-                    seen.add(resolved)
-                    samples.append(sample_file)
+            for pattern in patterns:
+                if sample_file.name.startswith(pattern):
+                    resolved = sample_file.resolve()
+                    if resolved not in seen:
+                        seen.add(resolved)
+                        samples.append(sample_file)
+                    break
 
     return samples
 
 
 def extract_transposition(sample_path: Path) -> int:
-    """Extract transposition amount from sample filename.
-
-    Looks for pattern like "_transposed_by-3.wav" or "_transposed_by+4.wav"
-
-    Args:
-        sample_path: Path to sample file
-
-    Returns:
-        Transposition in semitones, or 0 if not transposed
-    """
+    """Extract transposition amount from sample filename."""
     name = sample_path.stem
     if "_transposed_by" in name:
         try:
             trans_str = name.split("_transposed_by")[-1]
-            # Remove any remaining suffix
             trans_str = trans_str.split("_")[0].split(".")[0]
             return int(trans_str)
         except ValueError:
@@ -123,24 +143,26 @@ def concatenate_audio(
 ) -> Tuple[Path, List[Dict]]:
     """Concatenate audio samples via scale network navigation.
 
-    Args:
-        scales_dir: Path to organized scales_dir
-        sample_prefix: Sample naming prefix (e.g., "wildrose", "takemitsu_perc")
-        num_measures: Number of measures/segments to chain
-        output_path: Output WAV path (auto-generated if None)
-        scales_data_path: Path to scales_data.json
-        crossfade_ms: Crossfade duration in milliseconds
-        seed: Random seed for reproducibility
-        verbose: Print progress
-
     Returns:
-        Tuple of (output_path, journey) where journey is a list of dicts
-        with scale and sample info for each measure
+        Tuple of (output_path, journey) where journey includes:
+        - measure: measure number
+        - sample: sample filename
+        - scale: scale name
+        - transposition: semitones transposed
+        - duration_ms: duration in milliseconds
+        - start_ms: start time in milliseconds
+        - original_pitch_classes: original sample pitch classes
+        - transposed_pitch_classes: pitch classes after transposition
+        - scale_pitch_classes: pitch classes of the scale
     """
     if seed is not None:
         random.seed(seed)
 
     scales_data = load_scales_data(scales_data_path)
+
+    # Load samples manifest for pitch class info
+    project_path = scales_dir.parent
+    samples_manifest = load_samples_manifest(project_path)
 
     # Find starting options
     initial_options = find_initial_samples(scales_dir, sample_prefix, 1)
@@ -153,15 +175,39 @@ def concatenate_audio(
 
     # Initialize audio
     combined = AudioSegment.from_wav(current_sample)
+    current_time_ms = 0
 
-    # Track the journey
+    # Get pitch class info for first sample
+    transposition = extract_transposition(current_sample)
+    original_name = get_original_sample_name(current_sample.name)
+    original_pcs = samples_manifest.get(original_name, {}).get("pitch_classes", [])
+
+    # If pitch_classes not in manifest, try to compute from note_names
+    if not original_pcs:
+        note_names = samples_manifest.get(original_name, {}).get("note_names", [])
+        if note_names:
+            from ..scales.tymoczko import note_name_to_pitch_class
+            original_pcs = [note_name_to_pitch_class(n) for n in note_names]
+
+    transposed_pcs = transpose_pitch_classes(original_pcs, transposition) if original_pcs else []
+    scale_pcs = scales_data.get(current_scale, {}).get("pitch_classes", [])
+
+    duration_ms = len(combined)
+
+    # Track the journey with full pitch class info
     journey = [{
         "measure": 1,
-        "scale": current_scale,
         "sample": current_sample.name,
-        "transposition": extract_transposition(current_sample),
-        "duration_ms": len(combined),
+        "scale": current_scale,
+        "transposition": transposition,
+        "duration_ms": duration_ms,
+        "start_ms": current_time_ms,
+        "original_pitch_classes": original_pcs,
+        "transposed_pitch_classes": transposed_pcs,
+        "scale_pitch_classes": scale_pcs,
     }]
+
+    current_time_ms += duration_ms
 
     if verbose:
         print(f"1: {current_scale} - {current_sample.name}")
@@ -181,22 +227,44 @@ def concatenate_audio(
         next_sample = random.choice(options)
         current_scale = next_sample.parent.name
 
-        # Append audio
+        # Get audio and timing
         next_audio = AudioSegment.from_wav(next_sample)
+        duration_ms = len(next_audio)
+
+        # Get pitch class info
+        transposition = extract_transposition(next_sample)
+        original_name = get_original_sample_name(next_sample.name)
+        original_pcs = samples_manifest.get(original_name, {}).get("pitch_classes", [])
+
+        if not original_pcs:
+            note_names = samples_manifest.get(original_name, {}).get("note_names", [])
+            if note_names:
+                from ..scales.tymoczko import note_name_to_pitch_class
+                original_pcs = [note_name_to_pitch_class(n) for n in note_names]
+
+        transposed_pcs = transpose_pitch_classes(original_pcs, transposition) if original_pcs else []
+        scale_pcs = scales_data.get(current_scale, {}).get("pitch_classes", [])
+
         combined = combined.append(next_audio, crossfade=crossfade_ms)
 
         journey.append({
             "measure": measure,
-            "scale": current_scale,
             "sample": next_sample.name,
-            "transposition": extract_transposition(next_sample),
-            "duration_ms": len(next_audio),
+            "scale": current_scale,
+            "transposition": transposition,
+            "duration_ms": duration_ms,
+            "start_ms": current_time_ms,
+            "original_pitch_classes": original_pcs,
+            "transposed_pitch_classes": transposed_pcs,
+            "scale_pitch_classes": scale_pcs,
         })
+
+        current_time_ms += duration_ms
 
         if verbose:
             print(f"{measure}: {current_scale} - {next_sample.name}")
 
-    # Export
+    # Export audio
     if output_path is None:
         output_path = scales_dir.parent / "output" / f"{sample_prefix}_concat.wav"
 
@@ -218,8 +286,9 @@ def generate_companion_midi(
     instrument_name: str = "Cello",
     velocity: int = 100,
     base_octave: int = 60,
+    use_transposed_pitches: bool = True,
 ) -> Path:
-    """Generate a companion MIDI file showing scale pitches.
+    """Generate a companion MIDI file precisely timed to audio chunks.
 
     Args:
         journey: List of measure info dicts from concatenate_audio
@@ -228,6 +297,7 @@ def generate_companion_midi(
         instrument_name: MIDI instrument name
         velocity: Note velocity (0-127)
         base_octave: Base MIDI note number (60 = middle C)
+        use_transposed_pitches: If True, use transposed sample pitches; if False, use scale pitches
 
     Returns:
         Path to generated MIDI file
@@ -241,28 +311,101 @@ def generate_companion_midi(
     program = pretty_midi.instrument_name_to_program(instrument_name)
     instrument = pretty_midi.Instrument(program=program)
 
-    current_time = 0.0
-
     for entry in journey:
-        scale_name = entry["scale"]
+        start_sec = entry["start_ms"] / 1000.0
         duration_sec = entry["duration_ms"] / 1000.0
+        end_sec = start_sec + duration_sec
 
-        # Get scale pitch classes
-        pitch_classes = scales_data.get(scale_name, {}).get("pitch_classes", [])
+        # Use transposed pitch classes from the actual sample
+        if use_transposed_pitches and entry.get("transposed_pitch_classes"):
+            pitch_classes = entry["transposed_pitch_classes"]
+        else:
+            # Fallback to scale pitch classes
+            pitch_classes = entry.get("scale_pitch_classes", [])
 
-        # Add notes for each pitch in the scale
+        # Add notes for each pitch
         for pc in pitch_classes:
             note = pretty_midi.Note(
                 velocity=velocity,
                 pitch=base_octave + pc,
-                start=current_time,
-                end=current_time + duration_sec,
+                start=start_sec,
+                end=end_sec,
             )
             instrument.notes.append(note)
 
-        current_time += duration_sec
-
     midi.instruments.append(instrument)
     midi.write(str(output_path))
+
+    return output_path
+
+
+def generate_score_report(
+    journey: List[Dict],
+    output_path: Path,
+    title: str = "Audio Concatenation Score",
+) -> Path:
+    """Generate a markdown report showing the compositional journey.
+
+    Args:
+        journey: List of measure info dicts from concatenate_audio
+        output_path: Output markdown file path
+        title: Report title
+
+    Returns:
+        Path to generated report
+    """
+    lines = [
+        f"# {title}",
+        "",
+        f"**Total measures:** {len(journey)}",
+        f"**Total duration:** {sum(j['duration_ms'] for j in journey) / 1000:.2f}s",
+        "",
+        "---",
+        "",
+    ]
+
+    for entry in journey:
+        measure = entry["measure"]
+        sample = entry["sample"]
+        scale = entry["scale"]
+        transposition = entry["transposition"]
+        duration_ms = entry["duration_ms"]
+        start_ms = entry.get("start_ms", 0)
+
+        original_pcs = entry.get("original_pitch_classes", [])
+        transposed_pcs = entry.get("transposed_pitch_classes", [])
+        scale_pcs = entry.get("scale_pitch_classes", [])
+
+        # Convert pitch classes to note names for readability
+        original_notes = [pitch_class_to_note_name(pc) for pc in original_pcs]
+        transposed_notes = [pitch_class_to_note_name(pc) for pc in transposed_pcs]
+        scale_notes = [pitch_class_to_note_name(pc) for pc in scale_pcs]
+
+        trans_str = f"+{transposition}" if transposition > 0 else str(transposition)
+        if transposition == 0:
+            trans_str = "0 (original)"
+
+        lines.extend([
+            f"## Measure {measure}",
+            "",
+            f"**Sample:** `{sample}`",
+            f"**Time:** {start_ms/1000:.2f}s - {(start_ms + duration_ms)/1000:.2f}s ({duration_ms}ms)",
+            f"**Scale:** {scale}",
+            f"**Transposition:** {trans_str} semitones",
+            "",
+            "| | Pitch Classes | Notes |",
+            "|---|---|---|",
+            f"| Original | {original_pcs} | {', '.join(original_notes)} |",
+            f"| Transposed | {transposed_pcs} | {', '.join(transposed_notes)} |",
+            f"| Scale | {scale_pcs} | {', '.join(scale_notes)} |",
+            "",
+            "---",
+            "",
+        ])
+
+    # Write report
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        f.write("\n".join(lines))
 
     return output_path
