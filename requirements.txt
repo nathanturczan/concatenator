@@ -1,7 +1,11 @@
-# Core dependencies
+# Core dependencies (MIDI concatenation)
 music21>=9.0.0
 numpy>=1.20.0
 graphviz>=0.20.0
+
+# Audio concatenation (optional)
+pydub>=0.25.0
+pretty_midi>=0.2.10
 
 # Optional: for development
 # pytest>=7.0.0

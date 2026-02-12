@@ -32,14 +32,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+audio = [
+    "pydub>=0.25.0",
+    "pretty_midi>=0.2.10",
+]
 dev = [
     "pytest>=7.0.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
 ]
+all = [
+    "pydub>=0.25.0",
+    "pretty_midi>=0.2.10",
+]
 
 [project.scripts]
 concatenate-midi = "concatenator.scripts.concatenate_midi:main"
+concatenate-audio = "concatenator.scripts.concatenate_audio:main"
 
 [project.urls]
 Homepage = "https://github.com/nathanturczan/concatenator"
